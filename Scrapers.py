@@ -5,7 +5,7 @@ from datetime import date
 import bs4 as bs
 import pandas as pd
 import requests
-from CleaningFunctions import TripAdivsorDatecleaner
+from CleaningFunctions import OutputDateCleaner, TripAdivsorDatecleaner
 
 DESKTOP = os.path.join(os.path.join(os.path.expanduser('~')), 'Desktop') 
 TODAY = date.today()
@@ -102,6 +102,7 @@ def TripAdvisorScraper(url : str, pages : int, name=None, add=pd.DataFrame()):
     if add.empty: 
         TEMP.to_csv(DESKTOP + f"/TripAdvisorReviews.csv", index=False)
     else: 
+        OutputDateCleaner('Date of Review', add)
         OUTPUT = pd.concat([add, TEMP]).reset_index(drop=True)
-        OUTPUT = OUTPUT.drop_duplicates(ignore_index=True)
+        OUTPUT.drop_duplicates(subset=['Date of Review', 'Rating', 'Review', 'Website','Site'], keep="last", inplace=True)
         OUTPUT.to_csv(DESKTOP + f"/TripAdvisorReviews.csv", index=False)
