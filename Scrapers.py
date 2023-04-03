@@ -5,7 +5,8 @@ from datetime import date
 import bs4 as bs
 import pandas as pd
 import requests
-from CleaningFunctions import OutputDateCleaner, TripAdivsorDatecleaner
+from CleaningFunctions import (OutputDateCleaner, ReviewPunctuationCleaner,
+                               TripAdivsorDatecleaner)
 
 DESKTOP = os.path.join(os.path.join(os.path.expanduser('~')), 'Desktop') 
 TODAY = date.today()
@@ -25,12 +26,13 @@ def TripAdvisorScraper(url : str, pages : int, name=None, add=pd.DataFrame()):
     TAIL = "-".join([x for x in URL.split("-")[5:]])
     CURRENT = 0
     NUM = 0
-    REVIEWS = []
-    SITE = []
-    WEBSITE = []
-    RATINGS = []
-    TYPES = []
-    DATES = []
+    ALLREVIEWS = []
+    ALLSITES = []
+    ALLWEBSITES = []
+    ALLRATINGS = []
+    ALLTYPES = []
+    ALLDATES = []
+    ALLTITLES = []
     
     """
     
@@ -49,28 +51,28 @@ def TripAdvisorScraper(url : str, pages : int, name=None, add=pd.DataFrame()):
         HTML = PAGE.content
         SOUP = bs.BeautifulSoup(HTML, 'html.parser')
         
-        for review_selector in SOUP.find_all('div', class_ = "fIrGe _T bgMZj"):
-            REVIEW = review_selector.find('span', class_ ="yCeTE")
-            if REVIEW != None:
-                REVIEWS.append(REVIEW.text)
-                SITE.append(name)
-                WEBSITE.append('TripAdvisor')
+        REVIEWS = [review_selector.find('span', class_ ="yCeTE").text for review_selector in SOUP.find_all('div', class_="fIrGe _T bgMZj") if review_selector.find('span', class_ ="yCeTE") != None]
+        SITE = [name for i in range(len(REVIEWS))]
+        TITLES = [review_selector.find('span', class_="yCeTE").text for review_selector in SOUP.find_all('div', class_ = '_c') if review_selector.find('span', class_="yCeTE") != None]
+        WEBSITE = ['TripAdvisor' for i in range(len(REVIEWS))]
+        RATINGS = [review_selector.find('svg', class_="UctUV d H0")['aria-label']for review_selector in SOUP.find_all('div', class_ = '_c') if review_selector.find('svg', class_ ="UctUV d H0") != None]
+        TYPES = [review_selector.find('div', class_ ="RpeCd").text if review_selector.find('div', class_ ="RpeCd") != None else "• Unknown" for review_selector in SOUP.find_all('div', class_ = '_c')]
+        DATES = [review_selector.find('div', class_ ="biGQs _P pZUbB ncFvv osNWb").text for review_selector in SOUP.find_all('div', class_ = '_c') if review_selector.find('div', class_ ="biGQs _P pZUbB ncFvv osNWb") != None]
         
-        for review_selector in SOUP.find_all('div', class_ = '_c'):
-            RATING = review_selector.find('svg', class_ ="UctUV d H0")
-            if RATING != None:
-                RATINGS.append(RATING['aria-label'])
-            TYPE = review_selector.find('div', class_ ="RpeCd")
-            if TYPE != None:
-                TYPES.append(TYPE.text)
-            else:
-                TYPES.append("• Unknown")
-            DATE = review_selector.find('div', class_ ="biGQs _P pZUbB ncFvv osNWb")
-            if DATE != None:
-                DATES.append(DATE.text)
-                
+        if len(TYPES) > len(REVIEWS):
+            TYPES = TYPES[1:len(REVIEWS)+1]
+            
         print(f'Page {CURRENT} complete')
         
+        for i in range(len(REVIEWS)): 
+                ALLREVIEWS.append(REVIEWS[i])
+                ALLSITES.append(SITE[i])
+                ALLWEBSITES.append(WEBSITE[i])
+                ALLRATINGS.append(RATINGS[i])
+                ALLTYPES.append(TYPES[i])
+                ALLDATES.append(DATES[i])
+                ALLTITLES.append(TITLES[i])
+        print(ALLTYPES[-1])
         CURRENT += 1
         NUM += 10 
     
@@ -83,16 +85,18 @@ def TripAdvisorScraper(url : str, pages : int, name=None, add=pd.DataFrame()):
     Cleaning the data
 
     """
-    COLUMNS = ('Date of Review', 'Rating', 'Review', 'Website','Site', 'Type Of Visitor')
-    TEMP = list(zip(DATES, RATINGS, REVIEWS, WEBSITE, SITE, TYPES))
+    COLUMNS = ('Date of Review', 'Rating', 'Title', 'Review', 'Website','Site', 'Type Of Visitor')
+    TEMP = list(zip(ALLDATES, ALLRATINGS, ALLTITLES, ALLREVIEWS, ALLWEBSITES, ALLSITES, ALLTYPES))
     TEMP = pd.DataFrame(TEMP,columns=COLUMNS)
+    TEMP['Date of Visit'] = TEMP['Type Of Visitor'].str.split('\u2022', expand=True)[0].str.strip()
     TEMP['Type Of Visitor'] = TEMP['Type Of Visitor'].str.split('\u2022', expand=True)[1].str.strip()
-    TEMP['Type Of Visitor'] = TEMP['Type Of Visitor'].replace('Unknown', None)
+    TEMP['Type Of Visitor'] = TEMP['Type Of Visitor'].str.replace("Unknown", " ")
+    TEMP[['Month of Visit', 'Year of Visit']] = TEMP["Date of Visit"].apply(lambda x: pd.Series(str(x).split()))
     TEMP['Rating'] = TEMP['Rating'].str[:1]
     TEMP['Rating'] = pd.to_numeric(TEMP['Rating'])
-    
+    ReviewPunctuationCleaner('Review', TEMP)
     TripAdivsorDatecleaner('Date of Review', TEMP)
-    
+        
     """
 
     Exporting the data
@@ -100,9 +104,9 @@ def TripAdvisorScraper(url : str, pages : int, name=None, add=pd.DataFrame()):
     """
     print(f'{name} is complete')
     if add.empty: 
-        TEMP.to_csv(DESKTOP + f"/TripAdvisorReviews.csv", index=False)
+        TEMP.to_csv(DESKTOP + f"/TripAdvisorReviews.csv", index=False, encoding="utf-8")
     else: 
-        OutputDateCleaner('Date of Review', add)
         OUTPUT = pd.concat([add, TEMP]).reset_index(drop=True)
+        #OutputDateCleaner('Date of Review', OUTPUT)
         OUTPUT.drop_duplicates(subset=['Date of Review', 'Rating', 'Review', 'Website','Site'], keep="last", inplace=True)
-        OUTPUT.to_csv(DESKTOP + f"/TripAdvisorReviews.csv", index=False)
+        OUTPUT.to_csv(DESKTOP + "/TripAdvisorReviews.csv", index=False, encoding="utf-8")
