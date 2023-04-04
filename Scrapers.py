@@ -5,13 +5,12 @@ from datetime import date
 import bs4 as bs
 import pandas as pd
 import requests
-from CleaningFunctions import (OutputDateCleaner, ReviewPunctuationCleaner,
-                               TripAdivsorDatecleaner)
+from CleaningFunctions import ReviewPunctuationCleaner, TripAdivsorDatecleaner
 
 DESKTOP = os.path.join(os.path.join(os.path.expanduser('~')), 'Desktop') 
 TODAY = date.today()
 
-def TripAdvisorScraper(url : str, pages : int, name=None, add=pd.DataFrame()):
+def TripAdvisorScraper(url : str, pages=None, name=None, add=pd.DataFrame()):
     
     """ 
     
@@ -25,7 +24,9 @@ def TripAdvisorScraper(url : str, pages : int, name=None, add=pd.DataFrame()):
     HEAD = "-".join([x for x in URL.split("-")[:4]])
     TAIL = "-".join([x for x in URL.split("-")[5:]])
     CURRENT = 0
+    WORKING = True
     NUM = 0
+    PAGES = pages
     ALLREVIEWS = []
     ALLSITES = []
     ALLWEBSITES = []
@@ -42,7 +43,7 @@ def TripAdvisorScraper(url : str, pages : int, name=None, add=pd.DataFrame()):
     
     print(f"Starting to Webscrape {name} Reviews")
     
-    while CURRENT <= pages:
+    while WORKING:
         
         QUERY = "-or" + str(NUM) + "-"
         if NUM != 0:
@@ -64,6 +65,12 @@ def TripAdvisorScraper(url : str, pages : int, name=None, add=pd.DataFrame()):
             
         print(f'Page {CURRENT} complete')
         
+        if NUM != 0:
+            if not REVIEWS:
+                WORKING = False
+            elif PAGES and CURRENT >= PAGES:
+                WORKING = False
+        
         for i in range(len(REVIEWS)): 
                 ALLREVIEWS.append(REVIEWS[i])
                 ALLSITES.append(SITE[i])
@@ -72,7 +79,6 @@ def TripAdvisorScraper(url : str, pages : int, name=None, add=pd.DataFrame()):
                 ALLTYPES.append(TYPES[i])
                 ALLDATES.append(DATES[i])
                 ALLTITLES.append(TITLES[i])
-        print(ALLTYPES[-1])
         CURRENT += 1
         NUM += 10 
     
@@ -91,7 +97,6 @@ def TripAdvisorScraper(url : str, pages : int, name=None, add=pd.DataFrame()):
     TEMP['Date of Visit'] = TEMP['Type Of Visitor'].str.split('\u2022', expand=True)[0].str.strip()
     TEMP['Type Of Visitor'] = TEMP['Type Of Visitor'].str.split('\u2022', expand=True)[1].str.strip()
     TEMP['Type Of Visitor'] = TEMP['Type Of Visitor'].str.replace("Unknown", " ")
-    TEMP[['Month of Visit', 'Year of Visit']] = TEMP["Date of Visit"].apply(lambda x: pd.Series(str(x).split()))
     TEMP['Rating'] = TEMP['Rating'].str[:1]
     TEMP['Rating'] = pd.to_numeric(TEMP['Rating'])
     ReviewPunctuationCleaner('Review', TEMP)
@@ -107,6 +112,6 @@ def TripAdvisorScraper(url : str, pages : int, name=None, add=pd.DataFrame()):
         TEMP.to_csv(DESKTOP + f"/TripAdvisorReviews.csv", index=False, encoding="utf-8")
     else: 
         OUTPUT = pd.concat([add, TEMP]).reset_index(drop=True)
-        #OutputDateCleaner('Date of Review', OUTPUT)
+        OUTPUT['Date of Review'] = pd.to_datetime(OUTPUT['Date of Review'], format="%Y-%m-%d")
         OUTPUT.drop_duplicates(subset=['Date of Review', 'Rating', 'Review', 'Website','Site'], keep="last", inplace=True)
         OUTPUT.to_csv(DESKTOP + "/TripAdvisorReviews.csv", index=False, encoding="utf-8")
